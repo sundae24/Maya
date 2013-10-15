@@ -1,144 +1,157 @@
-import maya.cmds as cmds
-import maya.OpenMaya as OM
+import pymel.core as pm
 import random
 
-# one source, multiple target surfaces
-class Disperser():
-    
-    sourceObj = None
-    targetObjs = None
-    
-    # GUI
+class JJ_DisperserWindow():
+    @classmethod
+    def showUI(cls):
+        """Instantiate the pose manager window"""
+        win = cls()
+        win.create()
+        return win
+
     def __init__(self):
-        if cmds.window("disperser", exists=True):
-            cmds.deleteUI("disperser")
-        cmds.window("disperser", t = "Disperser")
-		
-		# source & targets
-        cmds.rowColumnLayout(nc=3,cal=[(1,"right")], cw=[(1,80),(2,200),(3,100)])
-        cmds.text(l="Source: ")
-        cmds.textField("sourceObj")
-        cmds.button("sourceButton", l="Select", c=self.selectSource)
-        cmds.text(l="Target(s): ")
-        cmds.textField("targetObjs")
-        cmds.button("targetsButton", l="Select", c=self.selectTarget)
-        cmds.setParent("..")
-        
+        """Initialize data attributes"""
+        self.window = 'jj_disperserWindow'
+        self.title = 'Disperser Window'
+        self.size = (380, 380)
+        self.sourceObj = None
+        self.targetObjs = None
+
+    def create(self):
+        if pm.window(self.window, exists=True):
+            pm.deleteUI(self.window)
+        pm.window(self.window, t=self.title)
+
+        # source & targets
+        pm.rowColumnLayout(nc=3,cal=[(1,'right')], cw=[(1,80),(2,200),(3,100)])
+        pm.text(l='Source: ')
+        self.sourceObjTf = pm.textField()
+        pm.button(l='Select', c=self.selectSource)
+        pm.text(l='Target(s): ')
+        self.targetObjsTf = pm.textField()
+        pm.button(l='Select', c=self.selectTarget)
+        pm.setParent('..')
+
         # number
-        cmds.rowColumnLayout(w=380)        
-        cmds.intSliderGrp("copyNum", l="Copies: ", v=10, cw3=[80,80,220], min=1, max=500, fmx=5000, f=True)
-        cmds.separator(h=10, st='in')
-        
+        pm.rowColumnLayout(w=self.size[0])
+        self.copyNum = pm.intSliderGrp(l='Copies: ', v=10, cw3=[80,80,220],
+                                       min=1, max=500, fmx=5000, f=True)
+        pm.separator(h=10, st='in')
+
         # rotation
-        cmds.rowColumnLayout(nc=2, cal=[(1,"right")], cw=[(1,80), (2,300)])
-        cmds.text(l="Rotation: ")
-        cmds.radioCollection("rotation")
-        cmds.radioButton("rotButFixed", l='Fixed', sl=True)
-        cmds.text(l="")
-        cmds.radioButton("rotButAlign", l='Align with Target')
-        cmds.text(l="")
-        cmds.radioButton("rotButRand", l='Random', onc="cmds.floatFieldGrp('rotationRange', e=True, en=True)", ofc="cmds.floatFieldGrp('rotationRange', e=True, en=False)")
-        cmds.setParent("..")
-        cmds.floatFieldGrp("rotationRange", l="Range: ", nf=3, v1=30, v2=30, v3=30, cw4=[80,100,100,100], en=False)
-        cmds.separator(h=10, st='in')
-        
+        pm.rowColumnLayout(nc=2, cal=[(1,'right')], cw=[(1,80), (2,300)])
+        pm.text(l='Rotation: ')
+        self.rotationModeRC = pm.radioCollection()
+        self.rotBtnFixed = pm.radioButton(l='Fixed', sl=True)
+        pm.text(l='')
+        self.rotBtnAlign = pm.radioButton(l='Align with Target')
+        pm.text(l='')
+        self.rotBtnRand = pm.radioButton(l='Random',
+                                         onc=lambda *args: self.rotationRange.setEnable(True),
+                                         ofc=lambda *args: self.rotationRange.setEnable(False))
+        pm.setParent('..')
+        self.rotationRange = pm.floatFieldGrp(l='Range: ', nf=3, v1=30, v2=30, v3=30,
+                                              cw4=[80,100,100,100], en=False)
+        pm.separator(h=10, st='in')
+
         # scale
-        cmds.rowColumnLayout(nc=2, cal=[(1,"right")], cw=[(1,80), (2,300)])
-        cmds.text(l="Scale: ")
-        cmds.radioCollection("scale")
-        cmds.radioButton("scaleButFixed", l='Fixed', sl=True)
-        cmds.text(l="")
-        cmds.radioButton("scaleButRand", l='Random', onc="cmds.floatFieldGrp('scaleRange', e=True, en=True)", ofc="cmds.floatFieldGrp('scaleRange', e=True, en=False)")
-        cmds.setParent( '..' )
-        cmds.floatFieldGrp("scaleRange", l="Min Max: ", nf=2, v1=1, v2=1, cw3=[80,100,100], en=False)
-        cmds.separator(h=10, st='in')
-        
+        pm.rowColumnLayout(nc=2, cal=[(1,'right')], cw=[(1,80), (2,300)])
+        pm.text(l='Scale: ')
+        self.scaleModeRC = pm.radioCollection()
+        self.scaleBtnFixed = pm.radioButton(l='Fixed', sl=True)
+        pm.text(l='')
+        self.scaleBtnRand = pm.radioButton(l='Random',
+                                           onc=lambda *args: self.scaleRange.setEnable(True),
+                                           ofc=lambda *args: self.scaleRange.setEnable(False))
+        pm.setParent( '..' )
+        self.scaleRange = pm.floatFieldGrp(l='Min Max: ', nf=2, v1=1, v2=1,
+                                           cw3=[80,100,100], en=False)
+        pm.separator(h=10, st='in')
+
         # disperse button
-        cmds.button("disperseBut", l="Disperse", c=self.disperse, w=380, al="center")
-        
-        cmds.showWindow("disperser")
-    
-    # one object allowed as source
+        pm.button(l='Disperse', c=self.disperse, w=380, al='center')
+
+        pm.showWindow(self.window)
+
     def selectSource(self, *args):
-        sourceList = cmds.ls(sl=True, tr=True)
-        if len(sourceList) > 1 or len(sourceList) == 0:
-            cmds.textField("sourceObj", e=True, tx="Please select one object")
+        """Called when the select source button is pressed"""
+        sourceList = pm.ls(sl=True, tr=True)
+        if len(sourceList) != 1:
+            self.sourceObjTf.setText('Please select one object')
         else:
             self.sourceObj = sourceList[0]
-            cmds.textField("sourceObj", e=True, tx=self.sourceObj)
-    
-    # support multiple targets
+            self.sourceObjTf.setText(str(self.sourceObj))
+
     def selectTarget(self, *args):
-        self.targetObjs = cmds.ls(sl=True, tr=True)
+        """Called when the select target button is pressed"""
+        self.targetObjs = pm.ls(sl=True, tr=True)
         if len(self.targetObjs) < 1:
-            cmds.textField("targetObjs", e=True, tx="Please select at least one object")
+            self.targetObjsTf.setText('Please select at least one object')
             return
-        targetsTx=', '.join(self.targetObjs)
-        cmds.textField("targetObjs", e=True, tx=targetsTx)
+        targetsTx = ', '.join([str(x) for x in self.targetObjs])
+        self.targetObjsTf.setText(targetsTx)
         self.targetVertNumList = []
         targetVerts = 0
         for obj in self.targetObjs:
-            targetVertNum = cmds.polyEvaluate(obj, v=True)
+            targetVertNum = pm.polyEvaluate(obj, v=True)
             self.targetVertNumList.append(targetVertNum)
             targetVerts += targetVertNum
         self.vertIndexList = [v for v in range(targetVerts)]
-        
-    # disperse 
+
     def disperse(self, *args):
+        """Called when the disperse button is pressed"""
         if self.sourceObj == None or self.targetObjs == None:
-            OM.MGlobal.displayError("Please make sure source and target(s) are selected above.")
+            pm.confirmDialog(t='Error', b=['OK'],
+                m='Please make sure source and targets are selected.')
             return
-        
+
         # get copy number
-        copyNum = cmds.intSliderGrp("copyNum", q=True, v=True)
-        if copyNum > len(self.vertIndexList):
-            OM.MGlobal.displayWarning("Not enough vertices on target(s) to make %d copies!"%copyNum)
-            copyNum = len(self.vertIndexList)
-        
+        copyNum = self.copyNum.getValue()
+        copyNum = min(copyNum, len(self.vertIndexList))
+
         # get rotation
-        rotationMode = cmds.radioCollection("rotation", q=True, sl=True)
-        if rotationMode == "rotButRand":
-            origRot = cmds.xform(self.sourceObj, ro=True, q=True)
-            rotRange = cmds.floatFieldGrp("rotationRange", q=True, v=True)
-        
+        rotationMode = self.rotationModeRC.getSelect()
+        rotationMode = pm.control(rotationMode, q=True, fpn=True)
+        if rotationMode == self.rotBtnRand:
+            origRot = pm.xform(self.sourceObj, ro=True, q=True)
+            rotRange = self.rotationRange.getValue()
+
         # get scale
-        scaleMode = cmds.radioCollection("scale", q=True, sl=True)
-        if scaleMode == "scaleButRand":
-            scaleRange = cmds.floatFieldGrp("scaleRange", q=True, v=True)
-            
+        scaleMode = self.scaleModeRC.getSelect()
+        scaleMode = pm.control(scaleMode, q=True, fpn=True)
+        if scaleMode == self.scaleBtnRand:
+            scaleRange = self.scaleRange.getValue()
+
         # make copies
         randVertIndexList = random.sample(self.vertIndexList, copyNum)
-        for i in range(copyNum):
-            newObj = cmds.duplicate(self.sourceObj, n="%s_copy"%self.sourceObj)
+        for i in randVertIndexList:
+            newObj = pm.duplicate(self.sourceObj, n='%s_copy'%self.sourceObj)
             # decide which target the random vert index falls on
             vertSum = 0
             targetIndex = 0
             targetVertIndex = 0
-            for j in range(len(self.targetVertNumList)):
-                vertSum += self.targetVertNumList[j]
-                if randVertIndexList[i]+1 <= vertSum:
+            for j, k in enumerate(self.targetVertNumList):
+                vertSum += k
+                if i + 1 <= vertSum:
                     targetIndex = j
-                    targetVertIndex = randVertIndexList[i] - (vertSum - self.targetVertNumList[j])
-                    #print "targetIndex: ", targetIndex, " vertIndex: ", targetVertIndex
+                    targetVertIndex = i - (vertSum - k)
                     break
             # apply scale
-            if scaleMode == "scaleButRand":
+            if scaleMode == self.scaleBtnRand:
                 randScale = random.uniform(scaleRange[0], scaleRange[1])
-                cmds.xform(newObj, s=(randScale,randScale,randScale))
+                pm.xform(newObj, s=(randScale,randScale,randScale))
             # apply rotation
-            if rotationMode == "rotButAlign": # normal constraint
-                cmds.normalConstraint(self.targetObjs[targetIndex], newObj, aim=(0,0,1), u=(0,1,0))
-            elif rotationMode == "rotButRand":
+            if rotationMode == self.rotBtnAlign: # normal constraint
+                pm.normalConstraint(self.targetObjs[targetIndex], newObj, aim=(0,0,1), u=(0,1,0))
+            elif rotationMode == self.rotBtnRand:
                 newRotX = random.uniform(origRot[0]-rotRange[0]/2,origRot[0]+rotRange[0]/2)
                 newRotY = random.uniform(origRot[1]-rotRange[1]/2,origRot[1]+rotRange[1]/2)
                 newRotZ = random.uniform(origRot[2]-rotRange[2]/2,origRot[2]+rotRange[2]/2)
-                cmds.xform(newObj, ro=(newRotX,newRotY,newRotZ))
-            rotatePivot = cmds.xform(newObj, rp=True, q=True)
-            newPos = cmds.pointPosition("%s.vtx[%d]"%(self.targetObjs[targetIndex],targetVertIndex))
+                pm.xform(newObj, ro=(newRotX,newRotY,newRotZ))
+            rotatePivot = pm.xform(newObj, rp=True, q=True)
+            newPos = pm.pointPosition('%s.vtx[%d]'%(self.targetObjs[targetIndex],targetVertIndex))
             posOffset = [newPos[0]-rotatePivot[0], newPos[1]-rotatePivot[1], newPos[2]-rotatePivot[2]]
-            cmds.xform(newObj, t=posOffset)
-            if rotationMode == "rotButAlign": # remove constraint after translation
-                cmds.delete(newObj, cn=True)
-        
-        
-Disperser()
+            pm.xform(newObj, t=posOffset)
+            # remove constraint after translation
+            if rotationMode == self.rotBtnAlign:
+                pm.delete(newObj, cn=True)
